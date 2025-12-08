@@ -2,37 +2,46 @@ import nest_asyncio
 nest_asyncio.apply()
 
 import random
+from pprint import pprint
 import mosaik
+
+STEP = 900  # 15 minuti
+END = 3600 * 4  # 4 ore
 
 SIM_CONFIG = {
     "Weather": {"python": "mosaik.basic_simulators:InputSimulator"},
     "PV": {"python": "pv_simulator_kw:PVSimulatorKW"},
+    "Output": {"python": "mosaik.basic_simulators:OutputSimulator"},
 }
 
-STEP = 900       # 15 minuti
-END = 3600 * 4   # 4 ore di simulazione
-
 with mosaik.World(SIM_CONFIG) as world:
-    # --- Avvio simulatori ---
+    # --- Start simulators ---
     weathersim = world.start("Weather", sim_id="Weather", step_size=STEP)
-    pvsim = world.start("PV", sim_id="PV", step_size=STEP, start_date="2023-06-01 12:00:00")
+    pvsim = world.start("PV", sim_id="PV", step_size=STEP)
+    outputsim = world.start("Output")
 
-    # --- Funzione Weather ---
-    weather = weathersim.Function(function=lambda t: random.uniform(0, 1000))  # W/m2
+    # --- Weather: genera valori casuali tra 0 e 1000 W/m2 ---
+    weather = weathersim.Function(function=lambda t: random.uniform(0, 1000))
 
-    # --- Creazione PV ---
-    pvs = pvsim.PVKW.create(
-        5,  # numero di pannelli PV
-        area=10,
-        efficiency=0.18,
-        latitude=45.0,
-        el_tilt=30.0,
-        az_tilt=0.0
-    )
+    # --- Crea PV con limite 6 kW ---
+    pvs = [pvsim.PVKW.create(
+            1, area=10 +i*0.1, latitude=53.14, efficiency=0.5, el_tilt=32.0, az_tilt=0.0 
+        )[0]
+        for i in range(2)
+    ]
 
-    # --- Collegamento Weather → PVKW ---
-    for pv_entity in pvs:
-        world.connect(weather, pv_entity, ('value', 'DNI[W/m2]'))
+    # --- Connect Weather → PV ---
+    for pv in pvs:
+        world.connect(weather, pv, ("value", "DNI[W/m2]"))
 
-    # --- Avvio simulazione ---
+    # --- Connect PV → OutputSimulator ---
+    output = outputsim.Dict()
+    for pv in pvs:
+        world.connect(pv, output, "P[kW]")
+
+    # --- Run simulation ---
     world.run(until=END)
+
+    # --- Get results from OutputSimulator ---
+    result = outputsim.get_dict(output.eid)
+    pprint(result)

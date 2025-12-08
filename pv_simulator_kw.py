@@ -54,7 +54,13 @@ class PVSimulatorKW(mosaik_api_v3.Simulator):
     def step(self, time, inputs, max_advance=None):
         self.cache = {}
         for eid, attrs in inputs.items():
-            irr = attrs.get("DNI[W/m2]", {}).get(0, 0)  # prende il primo valore
+            # prende il primo valore della sorgente (es. Weather.Function-0)
+            irr_dict = attrs.get("DNI[W/m2]", {})
+            if irr_dict:
+                irr = list(irr_dict.values())[0]
+            else:
+                irr = 0
+
             ent = self._entities[eid]
             ent["irradiance"] = irr
 
@@ -66,8 +72,10 @@ class PVSimulatorKW(mosaik_api_v3.Simulator):
             ent["P[kW]"] = min(P_theor, max_kw)
 
             self.cache[eid] = ent["P[kW]"]
-
+            print(f"Step time={time}, inputs={irr_dict}, P={ent['P[kW]']}")
+        
         return time + self.step_size
+
 
     def get_data(self, outputs):
         data = {}
