@@ -100,17 +100,30 @@ class LoadProfileSimulator(mosaik_api_v3.Simulator):
         self.step_size = step_size
 
         # Caricamento CSV (pandas legge automaticamente la prima riga come intestazione)
-        df = pd.read_csv(csv_path, index_col=0)
+        df = pd.read_csv(csv_path)
 
         # Rimuove eventuali righe completamente vuote
         df = df.dropna(how="all")
 
         # Controllo: 8760 righe (ore), 10 colonne (profili 0–9)
-        if df.shape != (8760, 10):
-            raise ValueError(f"Dimensione dati inattesa: {df.shape}, atteso (8760, 10)")
+        # Se ci sono 8761 righe → la prima è identificativa
+        if len(df) == 8761:
+            df = df.iloc[1:].reset_index(drop=True)
+
+        # Se ce n'è una in meno (caso reale che stai vedendo)
+        elif len(df) == 8759:
+            raise ValueError(
+                "CSV ha 8759 righe: manca un'ora. "
+                "Controlla DST o dati mancanti."
+            )
+
+        if len(df) != 8760:
+            raise ValueError(
+                f"Numero righe inatteso: {len(df)} (atteso 8760)"
+            )
 
         # Salva i dati
-        self.data = df.astype(float).reset_index(drop=True)
+        self.data = df.astype(float)
 
         return META
 
