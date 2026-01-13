@@ -140,9 +140,10 @@ class LoadProfileSimulator(mosaik_api_v3.Simulator):
         """
 
         entities = []
+        profile_id = model_params["profile_id"]
 
         for _ in range(num):
-            eid = f"{model}_{next(self.eid_counter)}"
+            eid = f"Home_{profile_id}"
 
             self.entities[eid] = {
                 "profile_id": model_params["profile_id"],

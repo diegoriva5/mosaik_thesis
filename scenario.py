@@ -32,10 +32,21 @@ with mosaik.World(SIM_CONFIG) as world:
     weather = weathersim.Function(function=lambda t: random.uniform(0, 1000))
 
     # --- Crea PV con limite 6 kW ---
-    pvs = [pvsim.PVKW.create(
-            1, area=10 +i*0.1, latitude=53.14, efficiency=0.5, el_tilt=32.0, az_tilt=0.0 
+
+    profile_ids = [str(i) for i in range(10)]   # Ho 10 profili di carico e faccio dipendere
+                                                # la produzione PV (cambia l'area) dallo 
+                                                # stesso ID
+
+    pvs = [pvsim.HomePV.create(
+            1, 
+            profile_id=pid,
+            area=10 +float(pid)*0.1,    # Cast a float per calcolo dell'area
+            latitude=53.14, 
+            efficiency=0.5, 
+            el_tilt=32.0, 
+            az_tilt=0.0 
         )[0]
-        for i in range(10)
+        for pid in profile_ids
     ]
 
     # --- Connect Weather → PV ---
@@ -46,7 +57,6 @@ with mosaik.World(SIM_CONFIG) as world:
     # Load profiles creation
     # -----------------------------
     # CSV contiene colonne '0' a '9' (da usare come profile_id)
-    profile_ids = [str(i) for i in range(10)]
 
     loads_pred = []
     loads_rt = []

@@ -5,9 +5,10 @@ meta = {
     "api_version": "3.0",
     "type": "hybrid",
     "models": {
-        "PVKW": {
+        "HomePV": {
             "public": True,
             "params": [
+                "profile_id",
                 "latitude",
                 "area",
                 "efficiency",
@@ -37,17 +38,21 @@ class PVSimulatorKW(mosaik_api_v3.Simulator):
         return self.meta
 
     def create(self, num, model, **model_params):
-        counter = self.eid_counters.setdefault(model, itertools.count())
         entities = []
 
-        for _ in range(num):
-            eid = f"{model}_{next(counter)}"
-            self._entities[eid] = {
-                **model_params,
-                "P[kW]": 0,
-                "irradiance": 0,
-            }
-            entities.append({'eid': eid, 'type': model, 'rel': []})
+        profile_id = model_params["profile_id"]
+        eid = f"Home_{profile_id}_PV_Production"
+
+        self._entities[eid] = {
+            **model_params,
+            "P[kW]": 0,
+            "irradiance": 0,
+        }
+        entities.append({
+            'eid': eid, 
+            'type': model, 
+            'rel': []
+        })
 
         return entities
 
