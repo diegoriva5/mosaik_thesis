@@ -6,13 +6,14 @@ from pprint import pprint
 import mosaik
 
 STEP = 3600  # 1 ora
-END = 3600 * 2  # 24 ore
+END = 3600 * 2  # 2 ore
 
 SIM_CONFIG = {
     "Weather": {"python": "mosaik.basic_simulators:InputSimulator"},
     "PV": {"python": "pv_simulator_kw:PVSimulatorKW"},
     "LoadPred": {"python": "load_profile_simulator:LoadProfileSimulator"},
     "LoadRT": {"python": "load_profile_simulator:LoadProfileSimulator"},
+    "SmartMeter": {"python": "smart_meter_simulator:SmartMeterSimulator"},
     "Output": {"python": "mosaik.basic_simulators:OutputSimulator"},
 }
 
@@ -22,21 +23,43 @@ LOAD_CSV_PATH_RT = "csv_data/rt_consumes.csv"
 
 with mosaik.World(SIM_CONFIG) as world:
     # --- Start simulators ---
-    weathersim = world.start("Weather", sim_id="Weather", step_size=STEP)
-    pvsim = world.start("PV", sim_id="PV", step_size=STEP)
-    load_pred_sim = world.start("LoadPred", sim_id="LoadPred", csv_path=LOAD_CSV_PATH_PRED, step_size=STEP)
-    load_rt_sim = world.start("LoadRT", sim_id="LoadRT", csv_path=LOAD_CSV_PATH_RT, step_size=STEP)
+    weathersim = world.start(
+        "Weather", 
+        sim_id="Weather", 
+        step_size=STEP
+    )
+    pvsim = world.start(
+        "PV", 
+        sim_id="PV", 
+        step_size=STEP
+    )
+    load_pred_sim = world.start(
+        "LoadPred", 
+        sim_id="LoadPred", 
+        csv_path=LOAD_CSV_PATH_PRED, 
+        step_size=STEP
+    )
+    load_rt_sim = world.start(
+        "LoadRT", 
+        sim_id="LoadRT", 
+        csv_path=LOAD_CSV_PATH_RT, 
+        step_size=STEP
+    )
+    smart_sim = world.start(
+        "SmartMeter",
+        sim_id="SmartMeter",
+        step_size=STEP
+    )
     outputsim = world.start("Output")
 
     # --- Weather: genera valori casuali tra 0 e 1000 W/m2 ---
     weather = weathersim.Function(function=lambda t: random.uniform(0, 1000))
 
-    # --- Crea PV con limite 6 kW ---
-
     profile_ids = [str(i) for i in range(10)]   # Ho 10 profili di carico e faccio dipendere
                                                 # la produzione PV (cambia l'area) dallo 
                                                 # stesso ID
 
+    # --- Crea PV con limite 6 kW ---
     pvs = [pvsim.HomePV.create(
             1, 
             profile_id=pid,
@@ -69,18 +92,49 @@ with mosaik.World(SIM_CONFIG) as world:
             load_rt_sim.LoadProfile.create(1, profile_id=pid)[0]
         )
 
+    # -------------------------
+    # Smart Meters creation
+    # -------------------------
+    smart_meters = []
+
+    for pid in profile_ids:
+        sm = smart_sim.SmartMeter.create(
+            1,
+            profile_id=pid
+        )[0]
+        smart_meters.append(sm)
+
+    # -------------------------------------------------
+    # CONNECTIONS
+    # -------------------------------------------------
+    for pv, lp, lr, sm in zip(pvs, loads_pred, loads_rt, smart_meters):
+        # PV → SmartMeter
+        world.connect(pv, sm, ("P[kW]", "P_PV_RT_Production[kW]"))
+
+        # LoadPred → SmartMeter (Day-Ahead)
+        world.connect(lp, sm, ("P_load[kW]", "P_load_DA_Prevision[kW]"))
+
+        # LoadRT → SmartMeter (Real-Time)
+        world.connect(lr, sm, ("P_load[kW]", "P_load_RT[kW]"))
 
     # --- Connect PV + Load -> OutputSimulator ---
     output = outputsim.Dict()
-    for pv in pvs:
-        world.connect(pv, output, "P[kW]")
+    for sm in smart_meters:
+        world.connect(
+            sm,
+            output,
+            "P_PV_RT_Production[kW]",
+            "P_load_DA_Prevision[kW]",
+            "P_load_RT[kW]",
 
-    for lp in loads_pred:
-        world.connect(lp, output, "P_load[kW]")
+            "P_DA_committed[kW]",
+            "P_RT_committed[kW]",
 
-    for lr in loads_rt:
-        world.connect(lr, output, "P_load[kW]")
-
+            "P_net_DA[kW]",
+            "P_net_phys_RT[kW]",
+            "P_net_RT[kW]",
+        )
+    
     # --- Run simulation ---
     world.run(until=END)
 
