@@ -78,17 +78,18 @@ class SmartMeterSimulator(mosaik_api_v3.Simulator):
                 return list(d.values())[0] if d else ent[attr]
 
             # Lettura input
-            P_pv_da = read("PV_DA_Prod_Prediction[kW]")
-            P_pv = read("P_PV_RT_Production[kW]")
-            P_load_DA = read("P_load_DA_Prevision[kW]")
-            P_load_RT = read("P_load_RT[kW]")
-            P_DA = read("P_DA_committed[kW]")
-            P_RT = read("P_RT_committed[kW]")
+            P_pv_da = read("PV_DA_Prod_Prediction[kW]")     # Previsione produzione PV
+            P_pv = read("P_PV_RT_Production[kW]")           # Energia prodotta dal PV reale in RT
+            P_load_DA = read("P_load_DA_Prevision[kW]")     # Previsione energia consumata
+            P_load_RT = read("P_load_RT[kW]")               # Energia consumata reale in RT
+            P_DA = read("P_DA_committed[kW]")   # Energia DA acquistata/venduta
+            P_RT = read("P_RT_committed[kW]")   # Energia RT acquistata/venduta
 
             # Calcoli
-            P_net_DA = P_pv - P_load_DA
-            P_net_phys_RT = P_pv - P_load_RT
-            P_net_RT = P_net_phys_RT - P_DA - P_RT
+            P_net_DA = P_pv_da - P_load_DA      # Se positivo: posso vendere, se negativo: possibile acquisto
+            P_net_phys_RT = P_pv - P_load_RT    # Bilancio fisico in RT
+            P_net_RT = P_net_phys_RT + P_DA     # Bilancio netto in RT (considera anche i commit DA) per accedere
+                                                # al mercato RT e acquistare/vendere energia (P_RT)
 
             ent.update({
                 "PV_DA_Prod_Prediction[kW]": P_pv_da,
