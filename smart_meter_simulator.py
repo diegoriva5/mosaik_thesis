@@ -10,9 +10,11 @@ META = {
             "params": ["profile_id"],
             "attrs": [
                 # Input / misure
+                "PV_DA_Prod_Prediction[kW]",  # Previsione produzione PV Day-Ahead
                 "P_PV_RT_Production[kW]",   # Energia prodotta dal PV in RT
                 "P_load_DA_Prevision[kW]",  # Energia prevista in DA
                 "P_load_RT[kW]",            # Energia consumata reale in RT
+                
 
                 # Commit di mercato
                 "P_DA_committed[kW]",   # Energia acquistata/venduta Day-Ahead
@@ -44,6 +46,7 @@ class SmartMeterSimulator(mosaik_api_v3.Simulator):
         eid = f"Home_{pid}_SmartMeter"
 
         self.entities[eid] = {
+            "PV_DA_Prod_Prediction[kW]": 0.0,
             "P_PV_RT_Production[kW]": 0.0,
             "P_load_DA_Prevision[kW]": 0.0,
             "P_load_RT[kW]": 0.0,
@@ -75,6 +78,7 @@ class SmartMeterSimulator(mosaik_api_v3.Simulator):
                 return list(d.values())[0] if d else ent[attr]
 
             # Lettura input
+            P_pv_da = read("PV_DA_Prod_Prediction[kW]")
             P_pv = read("P_PV_RT_Production[kW]")
             P_load_DA = read("P_load_DA_Prevision[kW]")
             P_load_RT = read("P_load_RT[kW]")
@@ -87,6 +91,7 @@ class SmartMeterSimulator(mosaik_api_v3.Simulator):
             P_net_RT = P_net_phys_RT - P_DA - P_RT
 
             ent.update({
+                "PV_DA_Prod_Prediction[kW]": P_pv_da,
                 "P_PV_RT_Production[kW]": P_pv,
                 "P_load_DA_Prevision[kW]": P_load_DA,
                 "P_load_RT[kW]": P_load_RT,

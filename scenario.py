@@ -6,10 +6,11 @@ from pprint import pprint
 import mosaik
 
 STEP = 3600  # 1 ora
-END = 3600 * 2  # 2 ore
+END = 3600 * 12  # 12 ore
 
 SIM_CONFIG = {
     "Weather": {"python": "mosaik.basic_simulators:InputSimulator"},
+    "PV_DA": {"python": "pv_DA_production_simulator:PVDAProductionSimulator"},
     "PV": {"python": "pv_simulator_kw:PVSimulatorKW"},
     "LoadPred": {"python": "load_profile_simulator:LoadProfileSimulator"},
     "LoadRT": {"python": "load_profile_simulator:LoadProfileSimulator"},
@@ -20,6 +21,7 @@ SIM_CONFIG = {
 # Percorso al CSV dei profili di carico
 LOAD_CSV_PATH_PRED = "csv_data/load_istat_social_groups.csv"
 LOAD_CSV_PATH_RT = "csv_data/rt_consumes.csv"
+PV_DA_CSV_PATH = "csv_data/pv_DA_production_prediction.csv"
 
 with mosaik.World(SIM_CONFIG) as world:
     # --- Start simulators ---
@@ -31,6 +33,12 @@ with mosaik.World(SIM_CONFIG) as world:
     pvsim = world.start(
         "PV", 
         sim_id="PV", 
+        step_size=STEP
+    )
+    pv_da_sim = world.start(
+        "PV_DA",
+        sim_id="PV_DA",
+        csv_path=PV_DA_CSV_PATH,
         step_size=STEP
     )
     load_pred_sim = world.start(
@@ -77,6 +85,19 @@ with mosaik.World(SIM_CONFIG) as world:
         world.connect(weather, pv, ("value", "DNI[W/m2]"))
 
     # -----------------------------
+    # PV Day-Ahead production profiles
+    # -----------------------------
+    pv_da_profiles = []
+
+    for pid in profile_ids:
+        pv_da_profiles.append(
+            pv_da_sim.PV_DA_Production.create(
+                1,
+                profile_id=pid
+            )[0]
+        )
+
+    # -----------------------------
     # Load profiles creation
     # -----------------------------
     # CSV contiene colonne '0' a '9' (da usare come profile_id)
@@ -107,9 +128,12 @@ with mosaik.World(SIM_CONFIG) as world:
     # -------------------------------------------------
     # CONNECTIONS
     # -------------------------------------------------
-    for pv, lp, lr, sm in zip(pvs, loads_pred, loads_rt, smart_meters):
+    for pv, pv_da, lp, lr, sm in zip(pvs, pv_da_profiles, loads_pred, loads_rt, smart_meters):
         # PV → SmartMeter
         world.connect(pv, sm, ("P[kW]", "P_PV_RT_Production[kW]"))
+
+        # PV DA → SmartMeter
+        world.connect(pv_da, sm, ("PV_DA_Prod_Prediction[kW]", "PV_DA_Prod_Prediction[kW]"))
 
         # LoadPred → SmartMeter (Day-Ahead)
         world.connect(lp, sm, ("P_load[kW]", "P_load_DA_Prevision[kW]"))
@@ -123,6 +147,7 @@ with mosaik.World(SIM_CONFIG) as world:
         world.connect(
             sm,
             output,
+            "PV_DA_Prod_Prediction[kW]",
             "P_PV_RT_Production[kW]",
             "P_load_DA_Prevision[kW]",
             "P_load_RT[kW]",
