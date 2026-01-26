@@ -39,7 +39,7 @@ META = {
 
             # Attributi dinamici prodotti a ogni step
             "attrs": [
-                "PV_DA_Prod_Prediction[kW]",
+                "PV_DA_Prod_Prediction[kW]+24h",  # Previsione produzione PV Day-Ahead
             ],
         },
     },
@@ -127,7 +127,7 @@ class PVDAProductionSimulator(mosaik_api_v3.Simulator):
 
             self.entities[eid] = {
                 "profile_id": profile_id,
-                "PV_DA_Prod_Prediction[kW]": 0.0,
+                "PV_DA_Prod_Prediction[kW]+24h": 0.0,
             }
 
             entities.append({
@@ -157,14 +157,12 @@ class PVDAProductionSimulator(mosaik_api_v3.Simulator):
         for eid, ent in self.entities.items():
             profile = ent["profile_id"]
 
-            # Valore in Watt
-            p_w = self.data.iloc[hour_idx][profile]
-
-            # Conversione W → kW
+            # Indice futuro: 24h dopo lo step corrente
+            future_idx = (hour_idx + 24) % len(self.data)
+            p_w = self.data.iloc[future_idx][profile]
             p_kw = p_w / 1000.0
-            print(f"[PV_DA] time={time}, eid={eid}, value={p_kw}")
 
-            ent["PV_DA_Prod_Prediction[kW]"] = p_kw
+            ent["PV_DA_Prod_Prediction[kW]+24h"] = p_kw
             self.cache[eid] = p_kw
 
         return time + self.step_size
@@ -182,7 +180,7 @@ class PVDAProductionSimulator(mosaik_api_v3.Simulator):
         for eid, attrs in outputs.items():
             data[eid] = {}
             for attr in attrs:
-                if attr == "PV_DA_Prod_Prediction[kW]":
+                if attr == "PV_DA_Prod_Prediction[kW]+24h":
                     data[eid][attr] = self.cache.get(eid, 0.0)
 
         return data

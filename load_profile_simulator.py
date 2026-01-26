@@ -45,7 +45,7 @@ META = {
 
             # Attributi dinamici prodotti a ogni step
             "attrs": [
-                "P_load[kW]",  # potenza assorbita nello slot orario
+                "P_load_DA+24h[kW]",  # potenza assorbita nello slot orario
             ],
         },
     },
@@ -62,7 +62,7 @@ class LoadProfileSimulator(mosaik_api_v3.Simulator):
     - righe 1–8760: valori orari in Watt (W)
 
     Output:
-    - P_load[kW] per ogni ora simulata
+    - P_load_DA+24h[kW] per ogni ora simulata
     """
 
     def __init__(self):
@@ -146,8 +146,8 @@ class LoadProfileSimulator(mosaik_api_v3.Simulator):
             eid = f"Home_{profile_id}"
 
             self.entities[eid] = {
-                "profile_id": model_params["profile_id"],
-                "P_load[kW]": 0.0,
+                "profile_id": profile_id,
+                "P_load_DA+24h[kW]": 0.0,
             }
 
             entities.append({
@@ -178,14 +178,15 @@ class LoadProfileSimulator(mosaik_api_v3.Simulator):
         for eid, ent in self.entities.items():
             profile = ent["profile_id"]
 
-            # Valore letto dal CSV in Watt
-            p_w = self.data.iloc[hour_idx][profile]
+            # Consumo Day-Ahead t+24h
+            future_idx = (hour_idx + 24) % len(self.data)
+            p_kw_da = self.data.iloc[future_idx][profile] / 1000.0
+            ent["P_load_DA[kW]"] = p_kw_da
 
-            # Conversione W → kW
-            p_kw = p_w / 1000.0
+            print(f"[Load] time={time}, eid={eid}, step_idx={hour_idx}, "
+                  f"t+24h_idx={future_idx}, P_load_DA={p_kw_da:.3f} kW")
 
-            ent["P_load[kW]"] = p_kw
-            self.cache[eid] = p_kw
+            self.cache[eid] =  p_kw_da
 
         # Richiesta del prossimo step
         return time + self.step_size
@@ -204,7 +205,7 @@ class LoadProfileSimulator(mosaik_api_v3.Simulator):
         for eid, attrs in outputs.items():
             data[eid] = {}
             for attr in attrs:
-                if attr == "P_load[kW]":
+                if attr == "P_load_DA+24h[kW]":
                     data[eid][attr] = self.cache.get(eid, 0.0)
 
         return data

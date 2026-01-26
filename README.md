@@ -7,3 +7,13 @@ Prendo il CSV dei consumi day-ahead (istat) e gestisco il cambiamento da -x a +2
 
 
 
+# Avvio
+- source venv/bin/activate
+- python3 scenario.py 
+
+
+
+
+
+
+
