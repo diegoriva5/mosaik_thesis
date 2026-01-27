@@ -12,8 +12,8 @@ SIM_CONFIG = {
     "Weather": {"python": "mosaik.basic_simulators:InputSimulator"},
     "PV_DA": {"python": "pv_DA_production_simulator:PVDAProductionSimulator"},
     "PV": {"python": "pv_simulator_kw:PVSimulatorKW"},
-    "LoadPred": {"python": "load_profile_simulator:LoadProfileSimulator"},
-    "LoadRT": {"python": "load_profile_simulator:LoadProfileSimulator"},
+    "LoadPred": {"python": "load_profile_DA_simulator:LoadProfileDASimulator"},
+    "LoadRT": {"python": "load_profile_RT_simulator:LoadProfileRTSimulator"},
     "SmartMeter": {"python": "smart_meter_simulator:SmartMeterSimulator"},
     # "DAMarket": {"python": "DA_market_simulator:DAMarketSimulator"},
     "Output": {"python": "mosaik.basic_simulators:OutputSimulator"},
@@ -120,10 +120,10 @@ with mosaik.World(SIM_CONFIG) as world:
 
     for pid in profile_ids:
         loads_pred.append(
-            load_pred_sim.LoadProfile.create(1, profile_id=pid)[0]
+            load_pred_sim.LoadProfileDA.create(1, profile_id=pid)[0]
         )
         loads_rt.append(
-            load_rt_sim.LoadProfile.create(1, profile_id=pid)[0]
+            load_rt_sim.LoadProfileRT.create(1, profile_id=pid)[0]
         )
 
     # -------------------------
@@ -147,16 +147,16 @@ with mosaik.World(SIM_CONFIG) as world:
     # -------------------------------------------------
     for pv, pv_da, lp, lr, sm in zip(pvs, pv_da_profiles, loads_pred, loads_rt, smart_meters):
         # PV → SmartMeter
-        world.connect(pv, sm, ("P[kW]", "P_PV_RT_Production[kW]"))
+        world.connect(pv, sm, ("P[kW]", "P_PV_RT[kW]"))
 
         # PV DA → SmartMeter
-        world.connect(pv_da, sm, ("PV_DA_Prod_Prediction[kW]+24h", "PV_DA_Prod_Prediction[kW]+24h"))
+        world.connect(pv_da, sm, ("P_PV_DA[kW]", "P_PV_DA[kW]"))
 
         # LoadPred → SmartMeter (Day-Ahead)
-        world.connect(lp, sm, ("P_load_DA+24h[kW]", "P_load_DA_Prevision[kW]+24h"))
+        world.connect(lp, sm, ("P_load_DA[kW]", "P_load_DA[kW]"))
 
         # LoadRT → SmartMeter (Real-Time)
-        world.connect(lr, sm, ("P_load_DA+24h[kW]", "P_load_RT[kW]"))
+        world.connect(lr, sm, ("P_load_RT[kW]", "P_load_RT[kW]"))
 
     # --- Connect PV + Load -> OutputSimulator ---
     output = outputsim.Dict()
@@ -164,10 +164,10 @@ with mosaik.World(SIM_CONFIG) as world:
         world.connect(
             sm,
             output,
-            "PV_DA_Prod_Prediction[kW]+24h",
-            # "P_PV_RT_Production[kW]",
-            "P_load_DA_Prevision[kW]+24h",
-            # "P_load_RT[kW]",
+            "P_PV_DA[kW]",
+            "P_PV_RT[kW]",
+            "P_load_DA[kW]",
+            "P_load_RT[kW]",
 
             # "P_DA_committed[kW]",
             # "P_RT_committed[kW]",

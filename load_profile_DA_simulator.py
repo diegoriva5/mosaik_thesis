@@ -1,18 +1,16 @@
-# pv_DA_production_simulator.py
+# load_profile_DA_simulator.py
 #
-# Simulatore mosaik per previsioni Day-Ahead
-# della produzione fotovoltaica oraria.
+# Simulatore mosaik per profili di carico elettrico orari.
 #
 # Ogni entità mosaik rappresenta:
-# - una singola abitazione (Home_i)
-# - un singolo profilo PV
+# - un singolo profilo di consumo
+# - un singolo agente di mercato
+# - un singolo wallet blockchain
 #
 # Il simulatore:
 # - legge un file CSV con dati in Watt (W)
-# - restituisce la potenza prevista in kW
-# - aggiorna il valore a ogni slot orario (1h)
-#
-# Non è presente alcun fattore di scala.
+# - restituisce la potenza assorbita in kW
+# Fornisce i valori t+24h per il mercato DA.
 
 import itertools
 import pandas as pd
@@ -22,6 +20,11 @@ import mosaik_api_v3
 # -------------------------------------------------------------------
 # META-DATA MOSAIK
 # -------------------------------------------------------------------
+# Descrive a mosaik:
+# - il tipo di simulatore
+# - i modelli disponibili
+# - parametri e attributi delle entità
+#
 META = {
     "api_version": "3.0",
 
@@ -29,7 +32,7 @@ META = {
     "type": "time-based",
 
     "models": {
-        "PV_DA_Production": {
+        "LoadProfileDA": {
             "public": True,
 
             # Parametri assegnati alla creazione dell'entità
@@ -39,30 +42,33 @@ META = {
 
             # Attributi dinamici prodotti a ogni step
             "attrs": [
-                "P_PV_DA[kW]",  # Previsione produzione PV Day-Ahead
+                "P_load_DA[kW]",  # potenza assorbita nello slot orario
             ],
         },
     },
 }
 
 
-class PVDAProductionSimulator(mosaik_api_v3.Simulator):
+class LoadProfileDASimulator(mosaik_api_v3.Simulator):
     """
-    Simulatore mosaik per previsioni orarie
-    di produzione fotovoltaica Day-Ahead.
+    Simulatore mosaik per profili di carico orari.
 
     CSV atteso:
-    - colonne: profili PV (0–9)
+    - colonne: profili di consumo
+    - riga 0: identificativi (NON dati orari)
     - righe 1–8760: valori orari in Watt (W)
 
     Output:
-    - PV_DA_Prod_Prediction[kW] per ogni ora simulata
+    - P_load_DA+24h[kW] per ogni ora simulata
     """
 
     def __init__(self):
         super().__init__(META)
 
+        # ID del simulatore assegnato da mosaik
         self.sid = None
+
+        # Dimensione dello step temporale (secondi)
         self.step_size = None
 
         # DataFrame con i dati orari (8760 righe)
@@ -71,7 +77,7 @@ class PVDAProductionSimulator(mosaik_api_v3.Simulator):
         # Stato interno delle entità: eid -> dict
         self.entities = {}
 
-        # Contatore per ID univoci
+        # Contatore per ID univoci delle entità
         self.eid_counter = itertools.count()
 
         # Cache dei valori calcolati nello step corrente
@@ -82,22 +88,30 @@ class PVDAProductionSimulator(mosaik_api_v3.Simulator):
     # ----------------------------------------------------------------
     def init(self, sid, csv_path, step_size=3600, **kwargs):
         """
-        Inizializzazione:
-        - carica CSV
-        - verifica consistenza temporale
+        Inizializzazione del simulatore.
+        - Carica CSV
+        - Ignora la riga di intestazione
+        - Controlla che ci siano 8760 ore × 10 profili
         """
         self.sid = sid
         self.step_size = step_size
 
+        # Caricamento CSV (pandas legge automaticamente la prima riga come intestazione)
         df = pd.read_csv(csv_path)
+
+        # Rimuove eventuali righe completamente vuote
         df = df.dropna(how="all")
 
-        # Gestione intestazione / righe extra
+        # Controllo: 8760 righe (ore), 10 colonne (profili 0–9)
+        # Se ci sono 8761 righe → la prima è identificativa
         if len(df) == 8761:
             df = df.iloc[1:].reset_index(drop=True)
+
+        # Se ce n'è una in meno (caso reale che stai vedendo)
         elif len(df) == 8759:
             raise ValueError(
-                "CSV ha 8759 righe: manca un'ora (DST o dato mancante)"
+                "CSV ha 8759 righe: manca un'ora. "
+                "Controlla DST o dati mancanti."
             )
 
         if len(df) != 8760:
@@ -105,6 +119,7 @@ class PVDAProductionSimulator(mosaik_api_v3.Simulator):
                 f"Numero righe inatteso: {len(df)} (atteso 8760)"
             )
 
+        # Salva i dati
         self.data = df.astype(float)
 
         return META
@@ -114,26 +129,28 @@ class PVDAProductionSimulator(mosaik_api_v3.Simulator):
     # ----------------------------------------------------------------
     def create(self, num, model, **model_params):
         """
-        Crea una entità PV_DA_Production
-        associata a una colonna del CSV.
+        Creazione delle entità LoadProfile.
+
+        Ogni entità:
+        - è associata a una colonna del CSV
+        - rappresenta un agente/wallet
         """
 
         entities = []
         profile_id = model_params["profile_id"]
 
         for _ in range(num):
-            # Uniforme a LoadProfileSimulator
             eid = f"Home_{profile_id}"
 
             self.entities[eid] = {
                 "profile_id": profile_id,
-                "P_PV_DA[kW]": 0.0,
+                "P_load_DA[kW]": 0.0,
             }
 
             entities.append({
                 "eid": eid,
                 "type": model,
-                "rel": [],
+                "rel": []
             })
 
         return entities
@@ -143,13 +160,14 @@ class PVDAProductionSimulator(mosaik_api_v3.Simulator):
     # ----------------------------------------------------------------
     def step(self, time, inputs, max_advance=None):
         """
-        Aggiornamento a ogni step temporale.
+        Aggiornamento dello stato a ogni step temporale.
 
+        - time è espresso in secondi dall'inizio simulazione
         - 1 step = 1 ora
-        - lettura dal CSV
-        - conversione W → kW
+        - il valore viene letto dal CSV e convertito in kW
         """
 
+        # Conversione tempo mosaik → indice orario
         hour_idx = int(time // self.step_size) % len(self.data)
 
         self.cache = {}
@@ -157,16 +175,18 @@ class PVDAProductionSimulator(mosaik_api_v3.Simulator):
         for eid, ent in self.entities.items():
             profile = ent["profile_id"]
 
-            # Indice futuro: 24h dopo lo step corrente
+            # Consumo Day-Ahead t+24h
             future_idx = (hour_idx + 24) % len(self.data)
-            p_w = self.data.iloc[future_idx][profile]
-            p_kw = p_w / 1000.0
+            p_w_da = self.data.iloc[future_idx][profile]
+            p_kw_da = p_w_da / 1000.0
 
-            print(f"[PV_DA] time={time}, eid={eid}, t+24h_idx={future_idx}, value={p_kw:.3f} kW")
+            print(f"[Load] time={time}, eid={eid}, hour_idx={hour_idx}, "
+                  f"t+24h_idx={future_idx}, P_load_DA={p_kw_da:.3f} kW")
 
-            ent["P_PV_DA[kW]"] = p_kw
-            self.cache[eid] = p_kw
+            ent["P_load_DA[kW]"] = p_kw_da
+            self.cache[eid] =  p_kw_da
 
+        # Richiesta del prossimo step
         return time + self.step_size
 
     # ----------------------------------------------------------------
@@ -174,7 +194,8 @@ class PVDAProductionSimulator(mosaik_api_v3.Simulator):
     # ----------------------------------------------------------------
     def get_data(self, outputs):
         """
-        Restituisce i dati richiesti dagli altri simulatori.
+        Restituisce a mosaik gli attributi richiesti
+        da altri simulatori (es. MarketSimulator).
         """
 
         data = {}
@@ -182,7 +203,7 @@ class PVDAProductionSimulator(mosaik_api_v3.Simulator):
         for eid, attrs in outputs.items():
             data[eid] = {}
             for attr in attrs:
-                if attr == "P_PV_DA[kW]":
+                if attr == "P_load_DA[kW]":
                     data[eid][attr] = self.cache.get(eid, 0.0)
 
         return data

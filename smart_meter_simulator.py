@@ -10,10 +10,10 @@ META = {
             "params": ["profile_id"],
             "attrs": [
                 # Input / misure
-                "PV_DA_Prod_Prediction[kW]+24h",  # Previsione produzione PV Day-Ahead
-                "P_PV_RT_Production[kW]",   # Energia prodotta dal PV in RT
-                "P_load_DA_Prevision[kW]+24h",  # Energia prevista in DA
-                "P_load_RT[kW]",            # Energia consumata reale in RT
+                "P_PV_DA[kW]",         # Previsione produzione PV Day-Ahead
+                "P_PV_RT[kW]",          # Energia prodotta dal PV in RT
+                "P_load_DA[kW]",        # Energia prevista in DA
+                "P_load_RT[kW]",        # Energia consumata reale in RT
                 
 
                 # Commit di mercato
@@ -36,21 +36,27 @@ class SmartMeterSimulator(mosaik_api_v3.Simulator):
         super().__init__(META)
         self.entities = {}
         self.cache = {}
-        self.future_data = {}  # Per salvare dati futuri
 
+    # --------------------------------------------------
+    # INIT
+    # --------------------------------------------------
 
     def init(self, sid, step_size=3600, **kwargs):
         self.step_size = step_size
         return META
+
+    # --------------------------------------------------
+    # CREATE
+    # --------------------------------------------------
 
     def create(self, num, model, **model_params):
         pid = model_params["profile_id"]
         eid = f"Home_{pid}_SmartMeter"
 
         self.entities[eid] = {
-            "PV_DA_Prod_Prediction[kW]+24h": 0.0,
-            "P_PV_RT_Production[kW]": 0.0,
-            "P_load_DA_Prevision[kW]+24h": 0.0,
+            "P_PV_DA[kW]": 0.0,
+            "P_load_DA[kW]": 0.0,
+            "P_PV_RT[kW]": 0.0,
             "P_load_RT[kW]": 0.0,
 
             # Commit (per ora nulli)
@@ -63,13 +69,15 @@ class SmartMeterSimulator(mosaik_api_v3.Simulator):
             "P_net_RT[kW]": 0.0,
         }
 
-        self.future_data[eid] = {}  # inizializza cache dei dati futuri
-
         return [{
             "eid": eid,
             "type": model,
             "rel": [],
         }]
+
+    # --------------------------------------------------
+    # STEP
+    # --------------------------------------------------
 
     def step(self, time, inputs, max_advance=None):
         self.cache = {}
@@ -82,25 +90,25 @@ class SmartMeterSimulator(mosaik_api_v3.Simulator):
                 return list(d.values())[0] if d else ent[attr]
 
             # Lettura input
-            P_pv_da = read("PV_DA_Prod_Prediction[kW]+24h")     # Previsione produzione PV (+24h)
-            P_pv = read("P_PV_RT_Production[kW]")           # Energia prodotta dal PV reale in RT
-            P_load_DA = read("P_load_DA_Prevision[kW]+24h")     # Previsione energia consumata (+24h)
-            P_load_RT = read("P_load_RT[kW]")               # Energia consumata reale in RT
-            P_DA = read("P_DA_committed[kW]")   # Energia DA acquistata/venduta
-            P_RT = read("P_RT_committed[kW]")   # Energia RT acquistata/venduta
+            P_PV_DA = read("P_PV_DA[kW]")          # Previsione produzione PV (+24h)
+            P_load_DA = read("P_load_DA[kW]")       # Previsione energia consumata (+24h)
+
+            P_PV_RT = read("P_PV_RT[kW]")           # Energia prodotta dal PV reale in RT
+            P_load_RT = read("P_load_RT[kW]")       # Energia consumata reale in RT
+
+            P_DA = read("P_DA_committed[kW]")       # Energia DA acquistata/venduta
+            P_RT = read("P_RT_committed[kW]")       # Energia RT acquistata/venduta
 
             # Calcoli
-            P_net_DA = P_pv_da - P_load_DA      # Se positivo: posso vendere, se negativo: possibile acquisto
-            P_net_phys_RT = P_pv - P_load_RT    # Bilancio fisico in RT
+            P_net_DA = P_PV_DA - P_load_DA      # Se positivo: posso vendere, se negativo: possibile acquisto
+            P_net_phys_RT = P_PV_RT - P_load_RT    # Bilancio fisico in RT
             P_net_RT = P_net_phys_RT + P_DA     # Bilancio netto in RT (considera anche i commit DA) per accedere
                                                 # al mercato RT e acquistare/vendere energia (P_RT)
 
-
-
             ent.update({
-                "PV_DA_Prod_Prediction[kW]+24h": P_pv_da,
-                "P_PV_RT_Production[kW]": P_pv,
-                "P_load_DA_Prevision[kW]+24h": P_load_DA,
+                "P_PV_DA[kW]": P_PV_DA,
+                "P_PV_RT[kW]": P_PV_RT,
+                "P_load_DA[kW]": P_load_DA,
                 "P_load_RT[kW]": P_load_RT,
                 "P_DA_committed[kW]": P_DA,
                 "P_RT_committed[kW]": P_RT,
